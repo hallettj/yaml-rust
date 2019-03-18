@@ -18,14 +18,14 @@ fn dump_node(yaml: &yaml::Yaml, indent: usize) {
             for x in v {
                 dump_node(x, indent + 1);
             }
-        },
+        }
         yaml::Node::Hash(ref h) => {
             for (k, yaml::HashItem { value, .. }) in h {
                 print_indent(indent);
                 println!("{:?}:", k);
                 dump_node(value, indent + 1);
             }
-        },
+        }
         _ => {
             print_indent(indent);
             println!("{:?}", doc);

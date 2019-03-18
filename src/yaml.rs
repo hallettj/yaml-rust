@@ -1,14 +1,14 @@
+use linked_hash_map::LinkedHashMap;
+use parser::*;
+use scanner::{Marker, ScanError, TScalarStyle, TokenType};
 use std::collections::BTreeMap;
+use std::f64;
+use std::i64;
+use std::mem;
+use std::ops::Deref;
 use std::ops::Index;
 use std::string;
-use std::i64;
-use std::f64;
-use std::mem;
 use std::vec;
-use parser::*;
-use scanner::{TScalarStyle, ScanError, TokenType, Marker};
-use linked_hash_map::LinkedHashMap;
-use std::ops::Deref;
 
 use std::cmp::Ordering;
 use std::hash::Hasher;
@@ -44,7 +44,7 @@ pub enum Node {
     Array(self::Array),
     /// YAML hash, can be accessed as a `LinkedHashMap`.
     ///
-    /// Itertion order will match the order of insertion into the map.
+    /// Insertion order will match the order of insertion into the map.
     Hash(self::Hash),
     /// Alias, not fully supported yet.
     Alias(usize),
@@ -93,11 +93,13 @@ impl ::std::hash::Hash for Yaml {
     }
 }
 
-
 pub type Array = Vec<Yaml>;
 
 #[derive(Clone, Debug)]
-pub struct HashItem { pub key_marker: Option<Marker>, pub value: Yaml }
+pub struct HashItem {
+    pub key_marker: Option<Marker>,
+    pub value: Yaml,
+}
 pub type Hash = LinkedHashMap<Node, HashItem>; // don't store mark in key; we want to be able to look up by value.
 
 impl PartialEq for HashItem {
@@ -126,7 +128,6 @@ impl ::std::hash::Hash for HashItem {
     }
 }
 
-
 // parse f64 as Core schema
 // See: https://github.com/chyh1990/yaml-rust/issues/51
 fn parse_f64(v: &str) -> Option<f64> {
@@ -134,7 +135,7 @@ fn parse_f64(v: &str) -> Option<f64> {
         ".inf" | ".Inf" | ".INF" | "+.inf" | "+.Inf" | "+.INF" => Some(f64::INFINITY),
         "-.inf" | "-.Inf" | "-.INF" => Some(f64::NEG_INFINITY),
         ".nan" | "NaN" | ".NAN" => Some(f64::NAN),
-        _ => v.parse::<f64>().ok()
+        _ => v.parse::<f64>().ok(),
     }
 }
 
@@ -153,31 +154,33 @@ impl MarkedEventReceiver for YamlLoader {
         match ev {
             Event::DocumentStart => {
                 // do nothing
-            },
+            }
             Event::DocumentEnd => {
                 match self.doc_stack.len() {
                     // empty document
                     0 => self.docs.push(Yaml(Some(mark), Node::BadValue)),
                     1 => self.docs.push(self.doc_stack.pop().unwrap().0),
-                    _ => unreachable!()
+                    _ => unreachable!(),
                 }
-            },
+            }
             Event::SequenceStart(aid) => {
-                self.doc_stack.push((Yaml(Some(mark), Node::Array(Vec::new())), aid));
-            },
+                self.doc_stack
+                    .push((Yaml(Some(mark), Node::Array(Vec::new())), aid));
+            }
             Event::SequenceEnd => {
                 let node = self.doc_stack.pop().unwrap();
                 self.insert_new_node(node);
-            },
+            }
             Event::MappingStart(aid) => {
-                self.doc_stack.push((Yaml(Some(mark), Node::Hash(Hash::new())), aid));
+                self.doc_stack
+                    .push((Yaml(Some(mark), Node::Hash(Hash::new())), aid));
                 self.key_stack.push(Yaml(Some(mark), Node::BadValue));
-            },
+            }
             Event::MappingEnd => {
                 self.key_stack.pop().unwrap();
                 let node = self.doc_stack.pop().unwrap();
                 self.insert_new_node(node);
-            },
+            }
             Event::Scalar(v, style, aid, tag) => {
                 let node = if style != TScalarStyle::Plain {
                     Node::String(v)
@@ -189,28 +192,22 @@ impl MarkedEventReceiver for YamlLoader {
                                 // "true" or "false"
                                 match v.parse::<bool>() {
                                     Err(_) => Node::BadValue,
-                                    Ok(v) => Node::Boolean(v)
-                                }
-                            },
-                            "int" => {
-                                match v.parse::<i64>() {
-                                    Err(_) => Node::BadValue,
-                                    Ok(v) => Node::Integer(v)
-                                }
-                            },
-                            "float" => {
-                                match parse_f64(&v) {
-                                    Some(_) => Node::Real(v),
-                                    None => Node::BadValue,
-                                }
-                            },
-                            "null" => {
-                                match v.as_ref() {
-                                    "~" | "null" => Node::Null,
-                                    _ => Node::BadValue,
+                                    Ok(v) => Node::Boolean(v),
                                 }
                             }
-                            _  => Node::String(v),
+                            "int" => match v.parse::<i64>() {
+                                Err(_) => Node::BadValue,
+                                Ok(v) => Node::Integer(v),
+                            },
+                            "float" => match parse_f64(&v) {
+                                Some(_) => Node::Real(v),
+                                None => Node::BadValue,
+                            },
+                            "null" => match v.as_ref() {
+                                "~" | "null" => Node::Null,
+                                _ => Node::BadValue,
+                            },
+                            _ => Node::String(v),
                         }
                     } else {
                         Node::String(v)
@@ -222,7 +219,7 @@ impl MarkedEventReceiver for YamlLoader {
 
                 let yaml = Yaml(Some(mark), node);
                 self.insert_new_node((yaml, aid));
-            },
+            }
             Event::Alias(id) => {
                 let yaml = match self.anchor_map.get(&id) {
                     Some(v) => v.clone(),
@@ -258,15 +255,21 @@ impl YamlLoader {
                         let mut newkey = Yaml(None, Node::BadValue);
                         let cur_key_mark = cur_key.0;
                         mem::swap(&mut newkey, cur_key);
-                        h.insert(newkey.1, HashItem { key_marker: cur_key_mark, value:  node.0});
+                        h.insert(
+                            newkey.1,
+                            HashItem {
+                                key_marker: cur_key_mark,
+                                value: node.0,
+                            },
+                        );
                     }
-                },
+                }
                 _ => unreachable!(),
             }
         }
     }
 
-    pub fn load_from_str(source: &str) -> Result<Vec<Yaml>, ScanError>{
+    pub fn load_from_str(source: &str) -> Result<Vec<Yaml>, ScanError> {
         let mut loader = YamlLoader {
             docs: Vec::new(),
             doc_stack: Vec::new(),
@@ -274,7 +277,7 @@ impl YamlLoader {
             anchor_map: BTreeMap::new(),
         };
         let mut parser = Parser::new(source.chars());
-        try!(parser.load(&mut loader, true));
+        parser.load(&mut loader, true)?;
         Ok(loader.docs)
     }
 }
@@ -329,35 +332,35 @@ impl Node {
     pub fn is_null(&self) -> bool {
         match *self {
             Node::Null => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_badvalue(&self) -> bool {
         match *self {
             Node::BadValue => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_array(&self) -> bool {
         match *self {
             Node::Array(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
             Node::Real(ref v) => parse_f64(v),
-            _ => None
+            _ => None,
         }
     }
 
     pub fn into_f64(self) -> Option<f64> {
         match self {
             Node::Real(ref v) => parse_f64(v),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -389,20 +392,23 @@ impl Node {
             _ if v.parse::<i64>().is_ok() => Node::Integer(v.parse::<i64>().unwrap()),
             // try parsing as f64
             _ if parse_f64(v).is_some() => Node::Real(v.to_owned()),
-            _ => Node::String(v.to_owned())
+            _ => Node::String(v.to_owned()),
         }
     }
 }
 
-static BAD_VALUE: Yaml= Yaml(None, Node::BadValue);
+static BAD_VALUE: Yaml = Yaml(None, Node::BadValue);
 impl<'a> Index<&'a str> for Node {
     type Output = Yaml;
 
     fn index(&self, idx: &'a str) -> &Yaml {
         let key = Node::String(idx.to_owned());
         match self.as_hash() {
-            Some(h) => h.get(&key).map(|HashItem { value, ..}| value).unwrap_or(&BAD_VALUE),
-            None => &BAD_VALUE
+            Some(h) => h
+                .get(&key)
+                .map(|HashItem { value, .. }| value)
+                .unwrap_or(&BAD_VALUE),
+            None => &BAD_VALUE,
         }
     }
 }
@@ -415,7 +421,9 @@ impl Index<usize> for Node {
             v.get(idx).unwrap_or(&BAD_VALUE)
         } else if let Some(v) = self.as_hash() {
             let key = Node::Integer(idx as i64);
-            v.get(&key).map(|HashItem { value, ..}| value).unwrap_or(&BAD_VALUE)
+            v.get(&key)
+                .map(|HashItem { value, .. }| value)
+                .unwrap_or(&BAD_VALUE)
         } else {
             &BAD_VALUE
         }
@@ -428,8 +436,7 @@ impl IntoIterator for Node {
 
     fn into_iter(self) -> Self::IntoIter {
         YamlIter {
-            yaml: self.into_vec()
-                .unwrap_or_else(Vec::new).into_iter()
+            yaml: self.into_vec().unwrap_or_else(Vec::new).into_iter(),
         }
     }
 }
@@ -448,8 +455,8 @@ impl Iterator for YamlIter {
 
 #[cfg(test)]
 mod test {
-    use yaml::*;
     use std::f64;
+    use yaml::*;
     #[test]
     fn test_coerce() {
         let s = "---
@@ -490,7 +497,8 @@ a4:
 a5: 'single_quoted'
 a6: \"double_quoted\"
 a7: 你好
-".to_owned();
+"
+        .to_owned();
         let out = YamlLoader::load_from_str(&s).unwrap();
         let doc = &out[0];
         assert_eq!(doc["a7"].as_str().unwrap(), "你好");
@@ -498,8 +506,7 @@ a7: 你好
 
     #[test]
     fn test_multi_doc() {
-        let s =
-"
+        let s = "
 'a scalar'
 ---
 'a scalar'
@@ -512,8 +519,7 @@ a7: 你好
 
     #[test]
     fn test_anchor() {
-        let s =
-"
+        let s = "
 a1: &DEFAULT
     b1: 4
     b2: d
@@ -526,8 +532,7 @@ a2: *DEFAULT
 
     #[test]
     fn test_bad_anchor() {
-        let s =
-"
+        let s = "
 a1: &DEFAULT
     b1: 4
     b2: *DEFAULT
@@ -535,7 +540,6 @@ a1: &DEFAULT
         let out = YamlLoader::load_from_str(&s).unwrap();
         let doc = &out[0];
         assert_eq!(doc["a1"]["b2"].1, Node::BadValue);
-
     }
 
     #[test]
@@ -549,8 +553,7 @@ a1: &DEFAULT
 
     #[test]
     fn test_plain_datatype() {
-        let s =
-"
+        let s = "
 - 'string'
 - \"string\"
 - string
@@ -629,15 +632,23 @@ a1: &DEFAULT
     #[test]
     fn test_bad_docstart() {
         assert!(YamlLoader::load_from_str("---This used to cause an infinite loop").is_ok());
-        assert_eq!(YamlLoader::load_from_str("----"), Ok(vec![Yaml(None, Node::String(String::from("----")))]));
-        assert_eq!(YamlLoader::load_from_str("--- #here goes a comment"), Ok(vec![Yaml(None, Node::Null)]));
-        assert_eq!(YamlLoader::load_from_str("---- #here goes a comment"), Ok(vec![Yaml(None, Node::String(String::from("----")))]));
+        assert_eq!(
+            YamlLoader::load_from_str("----"),
+            Ok(vec![Yaml(None, Node::String(String::from("----")))])
+        );
+        assert_eq!(
+            YamlLoader::load_from_str("--- #here goes a comment"),
+            Ok(vec![Yaml(None, Node::Null)])
+        );
+        assert_eq!(
+            YamlLoader::load_from_str("---- #here goes a comment"),
+            Ok(vec![Yaml(None, Node::String(String::from("----")))])
+        );
     }
 
     #[test]
     fn test_plain_datatype_with_into_methods() {
-        let s =
-"
+        let s = "
 - 'string'
 - \"string\"
 - string
@@ -694,11 +705,24 @@ a: ~
 c: ~
 ";
         let out = YamlLoader::load_from_str(&s).unwrap();
-        let first = out.into_iter().next().unwrap();
-        let mut iter = first.1.into_hash().unwrap().into_iter();
-        assert_eq!(Some((Node::String("b".to_owned()), HashItem { key_marker: None, value: Yaml(None, Node::Null)})), iter.next());
-        assert_eq!(Some((Node::String("a".to_owned()), HashItem { key_marker: None, value: Yaml(None, Node::Null)})), iter.next());
-        assert_eq!(Some((Node::String("c".to_owned()), HashItem { key_marker: None, value: Yaml(None, Node::Null)})), iter.next());
+        let Yaml(_, node) = out.into_iter().next().unwrap();
+        let mut iter = node.into_hash().unwrap().into_iter();
+        let null_value = || HashItem {
+            key_marker: None,
+            value: Yaml(None, Node::Null),
+        };
+        assert_eq!(
+            Some((Node::String("b".to_owned()), null_value())),
+            iter.next()
+        );
+        assert_eq!(
+            Some((Node::String("a".to_owned()), null_value())),
+            iter.next()
+        );
+        assert_eq!(
+            Some((Node::String("c".to_owned()), null_value())),
+            iter.next()
+        );
         assert_eq!(None, iter.next());
     }
 
@@ -756,10 +780,10 @@ c: ~
         let array_yaml = out.into_iter().next().unwrap();
         assert_mark!(array_yaml.0, 1, 0);
 
-        let array_items : Vec<Yaml> = array_yaml.1.into_iter().collect();
+        let array_items: Vec<Yaml> = array_yaml.1.into_iter().collect();
 
-        assert_mark!(array_items[0].0, 1,2);
-        assert_mark!(array_items[1].0, 2,3);
+        assert_mark!(array_items[0].0, 1, 2);
+        assert_mark!(array_items[1].0, 2, 3);
     }
 
     #[test]
@@ -773,9 +797,101 @@ c: ~
         let hash_items: Hash = hash_yaml.1.into_hash().unwrap();
 
         assert_mark!(hash_items[&Node::String("a".into())].key_marker, 1, 0);
-        assert_mark!(hash_items[&Node::String("a".into())].value.0 , 1, 3);
+        assert_mark!(hash_items[&Node::String("a".into())].value.0, 1, 3);
 
         assert_mark!(hash_items[&Node::String("b".into())].key_marker, 2, 0);
         assert_mark!(hash_items[&Node::String("b".into())].value.0, 2, 4);
+    }
+
+    #[test]
+    fn test_indentation_equality() {
+        let four_spaces = YamlLoader::load_from_str(
+            r#"
+hash:
+    with:
+        indentations
+"#,
+        )
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+        let two_spaces = YamlLoader::load_from_str(
+            r#"
+hash:
+  with:
+    indentations
+"#,
+        )
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+        let one_space = YamlLoader::load_from_str(
+            r#"
+hash:
+ with:
+  indentations
+"#,
+        )
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+        let mixed_spaces = YamlLoader::load_from_str(
+            r#"
+hash:
+     with:
+               indentations
+"#,
+        )
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+        assert_eq!(four_spaces, two_spaces);
+        assert_eq!(two_spaces, one_space);
+        assert_eq!(four_spaces, mixed_spaces);
+    }
+
+    #[test]
+    fn test_two_space_indentations() {
+        // https://github.com/kbknapp/clap-rs/issues/965
+
+        let s = r#"
+subcommands:
+  - server:
+    about: server related commands
+subcommands2:
+  - server:
+      about: server related commands
+subcommands3:
+ - server:
+    about: server related commands
+            "#;
+
+        let out = YamlLoader::load_from_str(&s).unwrap();
+        let doc = &out.into_iter().next().unwrap();
+
+        println!("{:#?}", doc);
+        assert_eq!(doc["subcommands"][0]["server"], Yaml(None, Node::Null));
+        assert!(doc["subcommands2"][0]["server"].as_hash().is_some());
+        assert!(doc["subcommands3"][0]["server"].as_hash().is_some());
+    }
+
+    #[test]
+    fn test_recursion_depth_check_objects() {
+        let s = "{a:".repeat(10_000) + &"}".repeat(10_000);
+        assert!(YamlLoader::load_from_str(&s).is_err());
+    }
+
+    #[test]
+    fn test_recursion_depth_check_arrays() {
+        let s = "[".repeat(10_000) + &"]".repeat(10_000);
+        assert!(YamlLoader::load_from_str(&s).is_err());
     }
 }

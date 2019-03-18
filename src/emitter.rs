@@ -1,13 +1,12 @@
-use std::fmt::{self, Display};
 use std::convert::From;
 use std::error::Error;
-use yaml::{Hash, Yaml, Node};
-
+use std::fmt::{self, Display};
+use yaml::{Hash, Node, Yaml};
 
 #[derive(Copy, Clone, Debug)]
 pub enum EmitError {
-        FmtError(fmt::Error),
-        BadHashmapKey,
+    FmtError(fmt::Error),
+    BadHashmapKey,
 }
 
 impl Error for EmitError {
@@ -50,7 +49,7 @@ pub type EmitResult = Result<(), EmitError>;
 
 // from serialize::json
 fn escape_str(wr: &mut fmt::Write, v: &str) -> Result<(), fmt::Error> {
-    try!(wr.write_str("\""));
+    wr.write_str("\"")?;
 
     let mut start = 0;
 
@@ -91,34 +90,33 @@ fn escape_str(wr: &mut fmt::Write, v: &str) -> Result<(), fmt::Error> {
             b'\x1e' => "\\u001e",
             b'\x1f' => "\\u001f",
             b'\x7f' => "\\u007f",
-            _ => { continue; }
+            _ => continue,
         };
 
         if start < i {
-            try!(wr.write_str(&v[start..i]));
+            wr.write_str(&v[start..i])?;
         }
 
-        try!(wr.write_str(escaped));
+        wr.write_str(escaped)?;
 
         start = i + 1;
     }
 
     if start != v.len() {
-        try!(wr.write_str(&v[start..]));
+        wr.write_str(&v[start..])?;
     }
 
-    try!(wr.write_str("\""));
+    wr.write_str("\"")?;
     Ok(())
 }
 
 impl<'a> YamlEmitter<'a> {
     pub fn new(writer: &'a mut fmt::Write) -> YamlEmitter {
         YamlEmitter {
-            writer: writer,
+            writer,
             best_indent: 2,
             compact: true,
-
-            level: -1
+            level: -1,
         }
     }
 
@@ -131,82 +129,82 @@ impl<'a> YamlEmitter<'a> {
     /// or tags), which should be OK, because this emitter doesn't
     /// (currently) emit those anyways.
     pub fn compact(&mut self, compact: bool) {
-      self.compact = compact;
+        self.compact = compact;
     }
 
     /// Determine if this emitter is using 'compact inline notation'.
     pub fn is_compact(&self) -> bool {
-      self.compact
+        self.compact
     }
 
     pub fn dump(&mut self, doc: &Yaml) -> EmitResult {
         // write DocumentStart
-        try!(write!(self.writer, "---\n"));
+        writeln!(self.writer, "---")?;
         self.level = -1;
         self.emit_node(doc)
     }
 
     fn write_indent(&mut self) -> EmitResult {
-        if self.level <= 0 { return Ok(()); }
+        if self.level <= 0 {
+            return Ok(());
+        }
         for _ in 0..self.level {
             for _ in 0..self.best_indent {
-                try!(write!(self.writer, " "));
+                write!(self.writer, " ")?;
             }
         }
         Ok(())
     }
 
     fn emit_node(&mut self, node: &Node) -> EmitResult {
-
-        match node  {
+        match node {
             Node::Array(ref v) => self.emit_array(v),
             Node::Hash(ref h) => self.emit_hash(h),
             Node::String(ref v) => {
                 if need_quotes(v) {
-                    try!(escape_str(self.writer, v));
-                }
-                else {
-                    try!(write!(self.writer, "{}", v));
+                    escape_str(self.writer, v)?;
+                } else {
+                    write!(self.writer, "{}", v)?;
                 }
                 Ok(())
-            },
+            }
             Node::Boolean(v) => {
                 if *v {
-                    try!(self.writer.write_str("true"));
+                    self.writer.write_str("true")?;
                 } else {
-                    try!(self.writer.write_str("false"));
+                    self.writer.write_str("false")?;
                 }
                 Ok(())
-            },
+            }
             Node::Integer(v) => {
-                try!(write!(self.writer, "{}", v));
+                write!(self.writer, "{}", v)?;
                 Ok(())
-            },
+            }
             Node::Real(ref v) => {
-                try!(write!(self.writer, "{}", v));
+                write!(self.writer, "{}", v)?;
                 Ok(())
-            },
+            }
             Node::Null | Node::BadValue => {
-                try!(write!(self.writer, "~"));
+                write!(self.writer, "~")?;
                 Ok(())
-            },
+            }
             // XXX(chenyh) Alias
-            _ => { Ok(()) }
+            _ => Ok(()),
         }
     }
 
     fn emit_array(&mut self, v: &[Yaml]) -> EmitResult {
         if v.is_empty() {
-            try!(write!(self.writer, "[]"));
+            write!(self.writer, "[]")?;
         } else {
             self.level += 1;
             for (cnt, x) in v.iter().enumerate() {
                 if cnt > 0 {
-                    try!(write!(self.writer, "\n"));
-                    try!(self.write_indent());
+                    writeln!(self.writer)?;
+                    self.write_indent()?;
                 }
-                try!(write!(self.writer, "-"));
-                try!(self.emit_val(true, x));
+                write!(self.writer, "-")?;
+                self.emit_val(true, x)?;
             }
             self.level -= 1;
         }
@@ -215,29 +213,29 @@ impl<'a> YamlEmitter<'a> {
 
     fn emit_hash(&mut self, h: &Hash) -> EmitResult {
         if h.is_empty() {
-            try!(self.writer.write_str("{}"));
+            self.writer.write_str("{}")?;
         } else {
             self.level += 1;
             for (cnt, (k, v)) in h.iter().enumerate() {
                 let complex_key = match *k {
-                  Node::Hash(_) | Node::Array(_) => true,
-                  _ => false,
+                    Node::Hash(_) | Node::Array(_) => true,
+                    _ => false,
                 };
                 if cnt > 0 {
-                    try!(write!(self.writer, "\n"));
-                    try!(self.write_indent());
+                    writeln!(self.writer)?;
+                    self.write_indent()?;
                 }
                 if complex_key {
-                  try!(write!(self.writer, "?"));
-                  try!(self.emit_val(true, k));
-                  try!(write!(self.writer, "\n"));
-                  try!(self.write_indent());
-                  try!(write!(self.writer, ":"));
-                  try!(self.emit_val(true, &v.value));
+                    write!(self.writer, "?")?;
+                    self.emit_val(true, k)?;
+                    writeln!(self.writer)?;
+                    self.write_indent()?;
+                    write!(self.writer, ":")?;
+                    self.emit_val(true, &v.value)?;
                 } else {
-                  try!(self.emit_node(k));
-                  try!(write!(self.writer, ":"));
-                  try!(self.emit_val(false, &v.value));
+                    self.emit_node(k)?;
+                    write!(self.writer, ":")?;
+                    self.emit_val(false, &v.value)?;
                 }
             }
             self.level -= 1;
@@ -253,28 +251,28 @@ impl<'a> YamlEmitter<'a> {
         match *val {
             Node::Array(ref v) => {
                 if (inline && self.compact) || v.is_empty() {
-                    try!(write!(self.writer, " "));
+                    write!(self.writer, " ")?;
                 } else {
-                    try!(write!(self.writer, "\n"));
+                    writeln!(self.writer)?;
                     self.level += 1;
-                    try!(self.write_indent());
+                    self.write_indent()?;
                     self.level -= 1;
                 }
                 self.emit_array(v)
-            },
+            }
             Node::Hash(ref h) => {
                 if (inline && self.compact) || h.is_empty() {
-                    try!(write!(self.writer, " "));
+                    write!(self.writer, " ")?;
                 } else {
-                    try!(write!(self.writer, "\n"));
+                    writeln!(self.writer)?;
                     self.level += 1;
-                    try!(self.write_indent());
+                    self.write_indent()?;
                     self.level -= 1;
                 }
                 self.emit_hash(h)
-            },
+            }
             _ => {
-                try!(write!(self.writer, " "));
+                write!(self.writer, " ")?;
                 self.emit_node(val)
             }
         }
@@ -282,8 +280,10 @@ impl<'a> YamlEmitter<'a> {
 }
 
 /// Check if the string requires quoting.
+/// Strings starting with any of the following characters must be quoted.
+/// :, &, *, ?, |, -, <, >, =, !, %, @
 /// Strings containing any of the following characters must be quoted.
-/// :, {, }, [, ], ,, &, *, #, ?, |, -, <, >, =, !, %, @, `
+/// {, }, [, ], ,, #, `
 ///
 /// If the string contains any of the following control characters, it must be escaped with double quotes:
 /// \0, \x01, \x02, \x03, \x04, \x05, \x06, \a, \b, \t, \n, \v, \f, \r, \x0e, \x0f, \x10, \x11, \x12, \x13, \x14, \x15, \x16, \x17, \x18, \x19, \x1a, \e, \x1c, \x1d, \x1e, \x1f, \N, \_, \L, \P
@@ -295,31 +295,49 @@ impl<'a> YamlEmitter<'a> {
 /// * When the string looks like a date (e.g. 2014-12-31) (otherwise it would be automatically converted into a Unix timestamp).
 fn need_quotes(string: &str) -> bool {
     fn need_quotes_spaces(string: &str) -> bool {
-        string.starts_with(' ')
-            || string.ends_with(' ')
+        string.starts_with(' ') || string.ends_with(' ')
     }
 
     string == ""
-    || need_quotes_spaces(string)
-    || string.contains(|character: char| {
-        match character {
-            ':' | '{' | '}' | '[' | ']' | ',' | '&' | '*' | '#' | '?' | '|' | '-' | '<' | '>' | '=' | '!' | '%' | '@' | '`' | '\"' | '\'' | '\\' | '\0' ... '\x06' | '\t' | '\n' | '\r' | '\x0e' ... '\x1a' | '\x1c' ... '\x1f' => true,
+        || need_quotes_spaces(string)
+        || string.starts_with(|character: char| match character {
+            '&' | '*' | '?' | '|' | '-' | '<' | '>' | '=' | '!' | '%' | '@' => true,
             _ => false,
-        }
-    })
-    || [// http://yaml.org/type/bool.html
-        // Note: 'y', 'Y', 'n', 'N', is not quoted deliberately, as in libyaml. PyYAML also parse
-        // them as string, not booleans, although it is volating the YAML 1.1 specification.
-        // See https://github.com/dtolnay/serde-yaml/pull/83#discussion_r152628088.
-        "yes","Yes","YES","no","No","NO",
-        "True", "TRUE", "true", "False", "FALSE", "false",
-        "on","On","ON","off","Off","OFF",
-        // http://yaml.org/type/null.html
-        "null","Null","NULL", "~"
-    ].contains(&string)
-    || string.starts_with('.')
-    || string.parse::<i64>().is_ok()
-    || string.parse::<f64>().is_ok()
+        })
+        || string.contains(|character: char| match character {
+            ':'
+            | '{'
+            | '}'
+            | '['
+            | ']'
+            | ','
+            | '#'
+            | '`'
+            | '\"'
+            | '\''
+            | '\\'
+            | '\0'...'\x06'
+            | '\t'
+            | '\n'
+            | '\r'
+            | '\x0e'...'\x1a'
+            | '\x1c'...'\x1f' => true,
+            _ => false,
+        })
+        || [
+            // http://yaml.org/type/bool.html
+            // Note: 'y', 'Y', 'n', 'N', is not quoted deliberately, as in libyaml. PyYAML also parse
+            // them as string, not booleans, although it is volating the YAML 1.1 specification.
+            // See https://github.com/dtolnay/serde-yaml/pull/83#discussion_r152628088.
+            "yes", "Yes", "YES", "no", "No", "NO", "True", "TRUE", "true", "False", "FALSE",
+            "false", "on", "On", "ON", "off", "Off", "OFF",
+            // http://yaml.org/type/null.html
+            "null", "Null", "NULL", "~",
+        ]
+        .contains(&string)
+        || string.starts_with('.')
+        || string.parse::<i64>().is_ok()
+        || string.parse::<f64>().is_ok()
 }
 
 #[cfg(test)]
@@ -342,7 +360,6 @@ a4:
     - 2
 ";
 
-
         let docs = YamlLoader::load_from_str(&s).unwrap();
         let doc = &docs[0];
         let mut writer = String::new();
@@ -354,7 +371,7 @@ a4:
         println!("emitted:\n{}", writer);
         let docs_new = match YamlLoader::load_from_str(&writer) {
             Ok(y) => y,
-            Err(e) => panic!(format!("{}", e))
+            Err(e) => panic!(format!("{}", e)),
         };
         let doc_new = &docs_new[0];
 
@@ -391,7 +408,7 @@ products:
         }
         let docs_new = match YamlLoader::load_from_str(&writer) {
             Ok(y) => y,
-            Err(e) => panic!(format!("{}", e))
+            Err(e) => panic!(format!("{}", e)),
         };
         let doc_new = &docs_new[0];
         assert_eq!(doc, doc_new);
@@ -403,7 +420,7 @@ products:
 a7: 你好
 boolean: "true"
 boolean2: "false"
-date: "2014-12-31"
+date: 2014-12-31
 empty_string: ""
 empty_string1: " "
 empty_string2: "    a"
@@ -499,21 +516,26 @@ bool1: false"#;
             emitter.dump(doc).unwrap();
         }
 
-        assert_eq!(expected, writer, "expected:\n{}\nactual:\n{}\n", expected, writer);
+        assert_eq!(
+            expected, writer,
+            "expected:\n{}\nactual:\n{}\n",
+            expected, writer
+        );
     }
 
     #[test]
     fn test_empty_and_nested() {
-      test_empty_and_nested_flag(false)
+        test_empty_and_nested_flag(false)
     }
 
     #[test]
     fn test_empty_and_nested_compact() {
-      test_empty_and_nested_flag(true)
+        test_empty_and_nested_flag(true)
     }
 
     fn test_empty_and_nested_flag(compact: bool) {
-        let s = if compact { r#"---
+        let s = if compact {
+            r#"---
 a:
   b:
     c: hello
@@ -521,7 +543,9 @@ a:
 e:
   - f
   - g
-  - h: []"# } else { r#"---
+  - h: []"#
+        } else {
+            r#"---
 a:
   b:
     c: hello
@@ -530,7 +554,8 @@ e:
   - f
   - g
   -
-    h: []"# };
+    h: []"#
+        };
 
         let docs = YamlLoader::load_from_str(&s).unwrap();
         let doc = &docs[0];
